@@ -1,0 +1,6 @@
+# STM32
+STM32/.metadata
+STM32/.settings
+STM32/[Rr]elease
+STM32/[Dd]ebug
+STM32/*.launch
