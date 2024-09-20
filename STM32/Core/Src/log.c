@@ -1,8 +1,11 @@
 /*
+ * Copyright (c) 2024 Mirco Heitmann
+ * All rights reserved.
+ * 
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ * 
  * log.c
- *
- *  Created on: Aug 25, 2024
- *      Author: mirco
  */
 
 #include "log.h"

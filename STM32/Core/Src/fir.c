@@ -1,10 +1,13 @@
 /*
+ * Copyright (c) 2024 Mirco Heitmann
+ * All rights reserved.
+ * 
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ * 
  * fir.c
  *
  * Wrapper for CMSIS-DSP FIR filter (16-bit int)
- *
- *  Created on: Jul 29, 2024
- *      Author: mirco
  */
 
 #include <fir.h>

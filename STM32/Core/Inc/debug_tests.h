@@ -1,8 +1,11 @@
 /*
+ * Copyright (c) 2024 Mirco Heitmann
+ * All rights reserved.
+ * 
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ * 
  * debug_tests.h
- *
- *  Created on: Aug 6, 2024
- *      Author: mirco
  */
 
 #ifndef INC_DEBUG_TESTS_H_

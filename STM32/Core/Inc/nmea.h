@@ -1,10 +1,13 @@
 /*
+ * Copyright (c) 2024 Mirco Heitmann
+ * All rights reserved.
+ * 
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ * 
  * nmea.h
  *
  * UART (RS-232) NMEA driver for u-blox 8 (Navilock 62528)
- *
- *  Created on: Aug 16, 2024
- *      Author: mirco
  */
 
 #ifndef INC_NMEA_H_

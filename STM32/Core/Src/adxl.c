@@ -1,10 +1,13 @@
 /*
+ * Copyright (c) 2024 Mirco Heitmann
+ * All rights reserved.
+ * 
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ * 
  * adxl.c
  *
  * SPI driver for MEMS sensor ADXL357 at 4 kSa/s
- *
- *  Created on: Aug 02, 2024
- *      Author: mirco
  */
 
 #include "adxl.h"
