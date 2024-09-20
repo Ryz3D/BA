@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * config.c
  */
 
@@ -134,8 +134,8 @@ HAL_StatusTypeDef Config_Init(ADC_HandleTypeDef *hadc1, TIM_HandleTypeDef *htim2
 
 HAL_StatusTypeDef Config_Init_ADC1(ADC_HandleTypeDef *hadc1)
 {
-	ADC_ChannelConfTypeDef sConfig = {
-		0 };
+	ADC_ChannelConfTypeDef sConfig = { 0 };
+	// Init ADC channels as regular conversion as per config
 	hadc1->Init.NbrOfConversion = config.piezo_count;
 	if (HAL_ADC_Init(hadc1) != HAL_OK)
 	{
@@ -205,7 +205,7 @@ HAL_StatusTypeDef Config_Init_TIM2(TIM_HandleTypeDef *htim2)
 
 HAL_StatusTypeDef Config_Init_TIM3(TIM_HandleTypeDef *htim3)
 {
-	// Clock source TIM2
+	// Clock source TIM2 (config.a_sampling_rate * config.oversampling_ratio)
 	// f = config.a_sampling_rate
 	htim3->Init.Prescaler = 0;
 	htim3->Init.Period = config.oversampling_ratio - 1;

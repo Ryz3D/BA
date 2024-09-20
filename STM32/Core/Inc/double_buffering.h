@@ -22,8 +22,8 @@ typedef struct
 {
 	uint32_t element_size;
 	uint32_t buffer_len;
-	volatile void *buffer1;
-	volatile void *buffer2;
+	volatile void *buffer_1;
+	volatile void *buffer_2;
 	volatile void *buffer_current;
 	volatile uint32_t write_index;
 	volatile uint32_t save_len;

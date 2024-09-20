@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * sd.h
  *
  * Helper file for SD card access
@@ -20,6 +20,7 @@
 #include "fatfs.h"
 #include "data_points.h"
 
+// Format of dir and files
 #define CONFIG_FILE_PATH "config.txt"
 #define DIR_FORMAT "%04hu-%02hhu-%02hhu_%lu"
 #define A_FILE_FORMAT DIR_FORMAT "/a_%li.bin"

@@ -14,7 +14,7 @@
 
 void Double_Buffer_Init(Double_Buffer_t *hbuffer)
 {
-	if (hbuffer->buffer1 == NULL || hbuffer->buffer2 == NULL)
+	if (hbuffer->buffer_1 == NULL || hbuffer->buffer_2 == NULL)
 	{
 		printf("(%lu) WARNING: Double_Buffer_Init: Null pointer in buffer1/buffer2\r\n", HAL_GetTick());
 	}
@@ -26,7 +26,7 @@ void Double_Buffer_Init(Double_Buffer_t *hbuffer)
 	}
 
 	// Init struct
-	hbuffer->buffer_current = hbuffer->buffer1;
+	hbuffer->buffer_current = hbuffer->buffer_1;
 	hbuffer->write_index = 0;
 	hbuffer->flag_save_buffer_1 = 0;
 	hbuffer->flag_save_buffer_2 = 0;
@@ -48,7 +48,7 @@ void Double_Buffer_Increment(Double_Buffer_t *hbuffer)
 		// Switch buffers
 		hbuffer->write_index = 0;
 		// If buffer_2 has been filled
-		if (hbuffer->buffer_current == hbuffer->buffer2)
+		if (hbuffer->buffer_current == hbuffer->buffer_2)
 		{
 			// If buffer_1 has been emptied
 			if (!hbuffer->flag_save_buffer_1)
@@ -56,7 +56,7 @@ void Double_Buffer_Increment(Double_Buffer_t *hbuffer)
 				// buffer_2 full
 				hbuffer->flag_save_buffer_2 = 1;
 				// Reset buffer_1 to use
-				hbuffer->buffer_current = hbuffer->buffer1;
+				hbuffer->buffer_current = hbuffer->buffer_1;
 			}
 			else
 			{
@@ -73,7 +73,7 @@ void Double_Buffer_Increment(Double_Buffer_t *hbuffer)
 				// buffer_1 full
 				hbuffer->flag_save_buffer_1 = 1;
 				// Reset buffer_2 to use
-				hbuffer->buffer_current = hbuffer->buffer2;
+				hbuffer->buffer_current = hbuffer->buffer_2;
 			}
 			else
 			{

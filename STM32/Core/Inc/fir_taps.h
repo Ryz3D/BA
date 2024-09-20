@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * fir_taps.h
  */
 
@@ -208,6 +208,7 @@ const int16_t fir_taps6[FIR_TAPS6_LEN] =
 const int16_t fir_taps7[FIR_TAPS7_LEN] =
 	{ -288, -469, -462, -140, 315, 565, 422, 40, -232, -190, 48, 217, 208, 158, 231, 391, 448, 305, 96, 17, 99, 186, 165, 116, 180, 327, 356, 149, -143, -258, -148, -32, -104, -255, -219, 33, 184, -61, -551, -810, -599, -225, -154, -382, -397, 129, 801, 883, 235, -380, -147, 755, 1281, 833, 162, 551, 2044, 2932, 1517, -1566, -3279, -994, 4505, 9158, 9158, 4505, -994, -3279, -1566, 1517, 2932, 2044, 551, 162, 833, 1281, 755, -147, -380, 235, 883, 801, 129, -397, -382, -154, -225, -599, -810, -551, -61, 184, 33, -219, -255, -104, -32, -148, -258, -143, 149, 356, 327, 180, 116, 165, 186, 99, 17, 96, 305, 448, 391, 231, 158, 208, 217, 48, -190, -232, 40, 422, 565, 315, -140, -462, -469, -288 };
 
+// All filter taps variants
 const int16_t *fir_taps_types[] = {
 	NULL,
 	fir_taps1,
@@ -219,6 +220,7 @@ const int16_t *fir_taps_types[] = {
 	fir_taps7,
 };
 
+// Taps count of all filter taps variants
 uint16_t fir_taps_lens[] = {
 	0,
 	FIR_TAPS1_LEN,

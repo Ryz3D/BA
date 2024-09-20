@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * nmea.c
  *
  * UART (RS-232) NMEA driver for u-blox 8 (Navilock 62528)
@@ -25,17 +25,22 @@ void NMEA_ConvertTime(NMEA_Data_t *data, float time);
 void NMEA_ConvertDate(NMEA_Data_t *data, int32_t date);
 void NMEA_ConvertLatLon(NMEA_Data_t *data, float lat, char lat_dir, float lon, char lon_dir);
 
+// Transmit PUBX protocol
 HAL_StatusTypeDef NMEA_TxPUBX(NMEA_t *hnmea, char *msg_buffer)
 {
 	char tx_buffer[100];
+	// Put message into packet format
 	sprintf(tx_buffer, "$PUBX,%s*00\r\n", msg_buffer);
+	// Calculate checksum
 	uint32_t tx_len = strlen(tx_buffer);
 	uint8_t checksum = 0;
 	for (uint32_t i = 1; i < tx_len - 5; i++)
 	{
 		checksum ^= tx_buffer[i];
 	}
+	// Write checksum as hexadecimal into packet
 	NMEA_Dec2Hex(checksum, &tx_buffer[tx_len - 4], &tx_buffer[tx_len - 3]);
+	// Transmit packet
 	if (HAL_UART_Transmit(hnmea->huart, (uint8_t*)tx_buffer, tx_len, hnmea->tx_timeout) == HAL_ERROR)
 	{
 		return HAL_ERROR;
@@ -43,13 +48,17 @@ HAL_StatusTypeDef NMEA_TxPUBX(NMEA_t *hnmea, char *msg_buffer)
 	return HAL_OK;
 }
 
+// Transmit UBX protocol
 HAL_StatusTypeDef NMEA_TxUBX(NMEA_t *hnmea, uint32_t header, void *packet, size_t packet_size)
 {
-	uint8_t tx_buffer[100] = {
-		0xB5, 0x62 };
+	// Protocol header
+	uint8_t tx_buffer[100] = { 0xB5, 0x62 };
 	uint32_t tx_len = packet_size + 8;
+	// Packet header
 	*(uint32_t*)(tx_buffer + 2) = header;
+	// Packet content
 	memcpy(tx_buffer + 6, packet, packet_size);
+	// Packet checksum
 	tx_buffer[tx_len - 2] = 0;
 	tx_buffer[tx_len - 1] = 0;
 	for (uint8_t i = 2; i < tx_len - 2; i++)
@@ -57,6 +66,7 @@ HAL_StatusTypeDef NMEA_TxUBX(NMEA_t *hnmea, uint32_t header, void *packet, size_
 		tx_buffer[tx_len - 2] += tx_buffer[i];
 		tx_buffer[tx_len - 1] += tx_buffer[tx_len - 2];
 	}
+	// Save transmitted header for received checksum
 	hnmea->last_ubx_header = header & 0xFFFF;
 	if (HAL_UART_Transmit(hnmea->huart, tx_buffer, tx_len, hnmea->tx_timeout) == HAL_ERROR)
 	{
@@ -65,8 +75,10 @@ HAL_StatusTypeDef NMEA_TxUBX(NMEA_t *hnmea, uint32_t header, void *packet, size_
 	return HAL_OK;
 }
 
+// Receive ACK in UBX protocol
 HAL_StatusTypeDef NMEA_RxAckUBX(NMEA_t *hnmea)
 {
+	// Wait for protocol header
 	uint8_t header = 0;
 	for (uint32_t i = 0; i < 100; i++)
 	{
@@ -85,24 +97,29 @@ HAL_StatusTypeDef NMEA_RxAckUBX(NMEA_t *hnmea)
 	{
 		return HAL_ERROR;
 	}
+	// Receive 8 bytes as 4 * uint16
 	uint16_t rx_buffer[8 / 2];
 	if (HAL_UART_Receive(hnmea->huart, (uint8_t*)rx_buffer, sizeof(rx_buffer), hnmea->rx_timeout) == HAL_ERROR)
 	{
 		return HAL_ERROR;
 	}
+	// Check if ACK/NAK
 	if (rx_buffer[0] != 0x0105)
 	{
 		// NAK: rx_buffer[0] == 0x0005
 		return HAL_ERROR;
 	}
+	// Check length
 	if (rx_buffer[1] != 2)
 	{
 		return HAL_ERROR;
 	}
+	// Check if corresponding ACK for transmitted message
 	if (rx_buffer[2] != hnmea->last_ubx_header)
 	{
 		return HAL_ERROR;
 	}
+	// Check checksum
 	uint8_t ck_a = 0, ck_b = 0;
 	for (uint8_t i = 0; i < sizeof(rx_buffer) - 2; i++)
 	{
@@ -179,6 +196,7 @@ HAL_StatusTypeDef NMEA_Init(NMEA_t *hnmea)
 		printf("(%lu) WARNING: UBX-CFG-RATE not acknowledged\r\n", HAL_GetTick());
 	}
 
+	// Start receiving data
 	if (HAL_UART_Receive_DMA(hnmea->huart, (uint8_t*)&hnmea->dma_buffer, NMEA_DMA_BUFFER_SIZE) == HAL_ERROR)
 	{
 		printf("(%lu) ERROR: NMEA_Init: HAL_UART_Receive_DMA failed\r\n", HAL_GetTick());
@@ -188,6 +206,7 @@ HAL_StatusTypeDef NMEA_Init(NMEA_t *hnmea)
 	return HAL_OK;
 }
 
+// Wait for GNSS date, return packet with valid date if received before timeout
 NMEA_Data_t NMEA_GetDate(NMEA_t *hnmea)
 {
 	printf("(%lu) Waiting for GNSS date (timeout after %i s)...\r\n", HAL_GetTick(), NMEA_DATE_WAIT_DURATION / 1000);
@@ -217,41 +236,55 @@ NMEA_Data_t NMEA_GetDate(NMEA_t *hnmea)
 	return data;
 }
 
+// Handle full DMA buffer
 HAL_StatusTypeDef NMEA_ProcessDMABuffer(NMEA_t *hnmea)
 {
 	for (uint32_t i = 0; i < NMEA_DMA_BUFFER_SIZE; i++)
 	{
+		// If end of line
 		if (hnmea->dma_buffer[i] == '\n')
 		{
+			// If current line has content
 			if (hnmea->rx_buffer_write_index > 1)
 			{
-				// Remove \r
+				// Copy finished current line to circular buffer and remove trailing \r
 				memcpy((void*)hnmea->circular_buffer[hnmea->circular_write_index].buffer, (void*)hnmea->rx_buffer, hnmea->rx_buffer_write_index - 1);
+				// Add string termination
 				hnmea->circular_buffer[hnmea->circular_write_index].buffer[hnmea->rx_buffer_write_index - 1] = '\0';
+				// Increment circular buffer index
 				hnmea->circular_write_index = (hnmea->circular_write_index + 1) % NMEA_CIRCULAR_BUFFER_SIZE;
+				// If incremented up to read index, there was a circular buffer overflow
 				if (hnmea->circular_write_index == hnmea->circular_read_index)
 				{
 					hnmea->overflow_circular_buffer = 1;
 				}
 			}
+			// Reset to start of line buffer
 			hnmea->rx_buffer_write_index = 0;
 		}
 		else
 		{
+			// If start of line
 			if (hnmea->dma_buffer[i] == '$')
 			{
+				// Reset to start of line buffer
 				hnmea->rx_buffer_write_index = 0;
+				// Save timestamp of start of transmission in circular buffer
 				hnmea->circular_buffer[hnmea->circular_write_index].timestamp = HAL_GetTick();
 			}
+			// Write character to line buffer
 			hnmea->rx_buffer[hnmea->rx_buffer_write_index++] = hnmea->dma_buffer[i];
+			// If line buffer at end, there was a line buffer overflow
 			if (hnmea->rx_buffer_write_index >= NMEA_RX_BUFFER_SIZE)
 			{
+				// Reset to start of line buffer
 				hnmea->rx_buffer_write_index = 0;
 				hnmea->overflow_rx_buffer = 1;
 			}
 		}
 	}
 
+	// Keep receiving data
 	if (HAL_UART_Receive_DMA(hnmea->huart, (uint8_t*)&hnmea->dma_buffer, NMEA_DMA_BUFFER_SIZE) != HAL_OK)
 	{
 		printf("(%lu) ERROR: NMEA_ProcessChar: HAL_UART_Receive_DMA failed\r\n", HAL_GetTick());
@@ -261,6 +294,7 @@ HAL_StatusTypeDef NMEA_ProcessDMABuffer(NMEA_t *hnmea)
 	return HAL_OK;
 }
 
+// Process line from circular buffer, returns 1 if valid data was written
 uint8_t NMEA_ProcessLine(NMEA_t *hnmea, NMEA_Data_t *data)
 {
 	if (hnmea->circular_read_index == hnmea->circular_write_index)
@@ -278,9 +312,13 @@ uint8_t NMEA_ProcessLine(NMEA_t *hnmea, NMEA_Data_t *data)
 	data->time_valid = 0;
 
 	volatile char *line_buffer = hnmea->circular_buffer[hnmea->circular_read_index].buffer;
+	// If packet starting with GNSS talker ID
 	if (strncmp("$G", (char*)line_buffer, 2) == 0)
 	{
+		// Get GNSS identifier from talker ID
 		data->talker = line_buffer[2];
+
+		// If RMC packet
 		if (strncmp("RMC", (char*)line_buffer + 3, 3) == 0)
 		{
 			if (!NMEA_ChecksumValid(hnmea))
@@ -291,19 +329,22 @@ uint8_t NMEA_ProcessLine(NMEA_t *hnmea, NMEA_Data_t *data)
 			NMEA_Packet_RMC_t packet;
 			NMEA_ParsePacket(hnmea, &packet, nmea_pformat_rmc);
 
+			// Check if date valid
 			if (packet.date > 0)
 			{
 				any_valid = 1;
 				data->date_valid = 1;
 				NMEA_ConvertDate(data, packet.date);
 			}
+			// Check if time valid
 			if (packet.time > 0)
 			{
 				any_valid = 1;
 				data->time_valid = 1;
 				NMEA_ConvertTime(data, packet.time);
 			}
-			if (packet.mode != 'N')
+			// Check if position and speed valid
+			if (packet.mode != NMEA_MODE_NOT_VALID)
 			{
 				any_valid = 1;
 				data->position_valid = 1;
@@ -313,6 +354,7 @@ uint8_t NMEA_ProcessLine(NMEA_t *hnmea, NMEA_Data_t *data)
 				data->speed_kmh = packet.speed_kn * 1.852f;
 			}
 		}
+		// If GGA packet
 		else if (strncmp("GGA", (char*)line_buffer + 3, 3) == 0)
 		{
 			if (!NMEA_ChecksumValid(hnmea))
@@ -323,6 +365,7 @@ uint8_t NMEA_ProcessLine(NMEA_t *hnmea, NMEA_Data_t *data)
 			NMEA_Packet_GGA_t packet;
 			NMEA_ParsePacket(hnmea, &packet, nmea_pformat_gga);
 
+			// If altitude valid
 			if (packet.altitude > 0)
 			{
 				any_valid = 1;
@@ -331,19 +374,24 @@ uint8_t NMEA_ProcessLine(NMEA_t *hnmea, NMEA_Data_t *data)
 			}
 		}
 	}
+
+	// Increment circular buffer read index
 	hnmea->circular_read_index = (hnmea->circular_read_index + 1) % NMEA_CIRCULAR_BUFFER_SIZE;
 
 	return any_valid;
 }
 
+// Check checksum
 uint8_t NMEA_ChecksumValid(NMEA_t *hnmea)
 {
 	volatile char *line_buffer = hnmea->circular_buffer[hnmea->circular_read_index].buffer;
 	uint8_t checksum_calc = 0;
 	for (uint16_t i = 1; line_buffer[i] != '\0'; i++)
 	{
+		// If end of data
 		if (line_buffer[i] == '*')
 		{
+			// Read and check checksum
 			uint8_t checksum = NMEA_Hex2Dec(line_buffer[i + 1]) << 4 | NMEA_Hex2Dec(line_buffer[i + 2]);
 			if (checksum == checksum_calc)
 			{
@@ -354,11 +402,13 @@ uint8_t NMEA_ChecksumValid(NMEA_t *hnmea)
 				return 0;
 			}
 		}
+		// Add to checksum calculation
 		checksum_calc ^= line_buffer[i];
 	}
 	return 0;
 }
 
+// Hexadecimal char to numeric value
 uint8_t NMEA_Hex2Dec(char c)
 {
 	if (c >= '0' && c <= '9')
@@ -376,6 +426,7 @@ uint8_t NMEA_Hex2Dec(char c)
 	return 0;
 }
 
+// Decimal value to hexadecimal chars
 void NMEA_Dec2Hex(uint8_t dec, char *c1, char *c2)
 {
 	*c1 = '0' + dec / 16;
@@ -390,11 +441,13 @@ void NMEA_Dec2Hex(uint8_t dec, char *c1, char *c2)
 	}
 }
 
+// Parse packet data with given format string from circular buffer into struct
 void NMEA_ParsePacket(NMEA_t *hnmea, void *packet_buffer, const char format[])
 {
-	// Skip message header
+	// Read from circular buffer
 	volatile char *line_buffer = hnmea->circular_buffer[hnmea->circular_read_index].buffer;
 	volatile char *line_pointer = line_buffer;
+	// Skip message header
 	while (*line_pointer != ',' && *line_pointer != '\0')
 	{
 		line_pointer++;
@@ -418,7 +471,7 @@ void NMEA_ParsePacket(NMEA_t *hnmea, void *packet_buffer, const char format[])
 				// Align pointer (to match address of member in struct)
 				buffer_pointer += sizeof(int32_t) - (uintptr_t)buffer_pointer % sizeof(int32_t);
 			}
-			// Check if value is present
+			// Check if value is present (comma skips current value, moves on to next value immediately)
 			if (*line_pointer != ',')
 			{
 				*(int32_t*)buffer_pointer = strtol((char*)line_pointer, &end_pointer, 10);
@@ -468,6 +521,7 @@ void NMEA_ParsePacket(NMEA_t *hnmea, void *packet_buffer, const char format[])
 		case 'c':
 			if (*line_pointer != ',')
 			{
+				// Get single char from packet
 				*(char*)buffer_pointer = *line_pointer;
 				line_pointer++;
 			}
@@ -480,6 +534,7 @@ void NMEA_ParsePacket(NMEA_t *hnmea, void *packet_buffer, const char format[])
 			break;
 		default:
 			printf("(%lu) WARNING: NMEA_ParsePacket: Unknown format %c\r\n", HAL_GetTick(), format[i_format]);
+			// Ignore all values until next value (',') or end of buffer ('\0')
 			while (*line_pointer != ',' && *line_pointer != '\0')
 			{
 				line_pointer++;
@@ -491,6 +546,7 @@ void NMEA_ParsePacket(NMEA_t *hnmea, void *packet_buffer, const char format[])
 	}
 }
 
+// Convert time from NMEA float format to NMEA_Data_t hour/minute/second
 void NMEA_ConvertTime(NMEA_Data_t *data, float time)
 {
 	data->hour = (uint32_t)time / 10000;
@@ -498,6 +554,7 @@ void NMEA_ConvertTime(NMEA_Data_t *data, float time)
 	data->second = fmod(time, 100);
 }
 
+// Convert date from NMEA integer format to NMEA_Data_t day/month/year
 void NMEA_ConvertDate(NMEA_Data_t *data, int32_t date)
 {
 	data->day = date / 10000;
@@ -505,6 +562,7 @@ void NMEA_ConvertDate(NMEA_Data_t *data, int32_t date)
 	data->year = date % 100;
 }
 
+// Convert coordinates from NMEA float/char format to NMEA_Data_t signed true degrees
 void NMEA_ConvertLatLon(NMEA_Data_t *data, float lat, char lat_dir, float lon, char lon_dir)
 {
 	lat /= 100.0f;
@@ -514,9 +572,11 @@ void NMEA_ConvertLatLon(NMEA_Data_t *data, float lat, char lat_dir, float lon, c
 	int lon_deg = (int)lon;
 	float lat_minutes = lat - lat_deg;
 	float lon_minutes = lon - lon_deg;
+	// Convert degrees and minutes to true degrees
 	data->lat = lat_deg + lat_minutes / 0.6f;
 	data->lon = lon_deg + lon_minutes / 0.6f;
 
+	// Convert direction to sign
 	if (lat_dir == 'S')
 	{
 		data->lat *= -1;

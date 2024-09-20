@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * adxl.h
  *
  * SPI driver for MEMS sensor ADXL357 at 4 kSa/s
@@ -18,6 +18,7 @@
 #include "config.h"
 #include "stm32f7xx_hal.h"
 
+// ADXL357 register addresses
 #define ADXL_REG_DEVID_AD 0x00
 #define ADXL_REG_DEVID_MST 0x01
 #define ADXL_REG_PARTID 0x02
@@ -55,6 +56,7 @@
 #define ADXL_REG_SELF_TEST 0x2E
 #define ADXL_REG_RESET 0x2F
 
+// Activate/deactivate ADXL via chip select pin
 #define ADXL_CHIP_SELECT(hadxl) HAL_GPIO_WritePin(hadxl->CS_GPIO_Port, hadxl->CS_Pin, GPIO_PIN_RESET);
 #define ADXL_CHIP_DESELECT(hadxl) HAL_GPIO_WritePin(hadxl->CS_GPIO_Port, hadxl->CS_Pin, GPIO_PIN_SET);
 
@@ -71,7 +73,7 @@ typedef struct
 	ADXL_State_t state;
 	SPI_HandleTypeDef *hspi;
 	uint32_t timeout;
-	uint16_t sampling_rate; // IMPORTANT: Provide sampling rate as truncated (rounded-down) given in datasheet S. 48
+	uint16_t sampling_rate; // IMPORTANT: Truncate (round-down) the given sampling rate in the datasheet (p. 48) if below 125 Hz
 	uint16_t acceleration_range;
 	GPIO_TypeDef *CS_GPIO_Port;
 	uint16_t CS_Pin;

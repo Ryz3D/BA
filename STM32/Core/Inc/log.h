@@ -27,8 +27,8 @@ typedef struct {
 	UART_HandleTypeDef *huart;
 	uint32_t flush_timeout;
 	uint32_t last_write;
-	char buffer1[LOG_BUFFER_LEN];
-	char buffer2[LOG_BUFFER_LEN];
+	char buffer_1[LOG_BUFFER_LEN];
+	char buffer_2[LOG_BUFFER_LEN];
 	Double_Buffer_t hbuffer;
 } Log_t;
 

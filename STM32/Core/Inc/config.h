@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * config.h
  */
 
@@ -17,10 +17,10 @@
 #include "stm32f7xx_hal.h"
 
 #define VERSION 1
-// Load config from SD
-// default: 1
+// Enable loading config file from SD if 1, otherwise use default defined in config.c
 #define LOAD_CONFIG 1
 
+// Compiled config
 #define OVERSAMPLING_RATIO_MAX 20
 #define PIEZO_COUNT_MAX 5
 #define A_BUFFER_LEN_MAX 4096
@@ -29,6 +29,7 @@
 #define NMEA_PACKET_MERGE_DURATION 25
 #define NMEA_NO_PACKET_DURATION 5000
 
+// Format strings for saving/loading config file
 #define C_F_BOOT_WITHOUT_DATE "boot_without_date=%hhu"
 #define C_F_PRINT_ACCELERATION_DATA "print_acceleration_data=%hhu"
 #define C_F_PRINT_POSITION_DATA "print_position_data=%hhu"

@@ -2,10 +2,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * main.c
  */
 /* USER CODE END Header */
@@ -82,8 +82,9 @@ uint32_t time_p_inc = 0; // When a valid NMEA packet is received, this is set to
 uint32_t time_p_last = 0; // Time of last NMEA packet
 uint32_t time_p_last_lock = 0; // Time of last NMEA packet with valid position
 
-volatile uint16_t pz_dma_buffer[PIEZO_COUNT_MAX * OVERSAMPLING_RATIO_MAX];
+volatile uint16_t pz_dma_buffer[PIEZO_COUNT_MAX * OVERSAMPLING_RATIO_MAX]; // DMA buffer for piezo ADC data, stores n samples (where n is the oversampling ratio)
 
+// Double buffering arrays and pointers to current element
 volatile a_data_point_t a_buffer_1[A_BUFFER_LEN_MAX];
 volatile a_data_point_t a_buffer_2[A_BUFFER_LEN_MAX];
 volatile a_data_point_t *a_current_data_point;
@@ -91,6 +92,7 @@ volatile p_data_point_t p_buffer_1[P_BUFFER_LEN_MAX];
 volatile p_data_point_t p_buffer_2[P_BUFFER_LEN_MAX];
 volatile p_data_point_t *p_current_data_point;
 
+// Flags for current data point (allow for atomic set operations in IRQ's)
 volatile uint8_t flag_complete_a_mems = 0;
 volatile uint8_t flag_complete_a_pz = 0;
 volatile uint8_t flag_complete_p_position = 0;
@@ -131,7 +133,6 @@ void Main_Increment_p_Buffer();
  */
 int main(void)
 {
-
 	/* USER CODE BEGIN 1 */
 	/* USER CODE END 1 */
 
@@ -181,27 +182,29 @@ int main(void)
 	// Boot blink sequence
 	for (uint8_t i = 0; i < 3; i++)
 	{
-		HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, i == 0 ? GPIO_PIN_SET : GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, i == 1 ? GPIO_PIN_SET : GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, i == 2 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(LED_GNSS_LOCK, i == 0 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(LED_ACTIVE, i == 1 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(LED_ERROR, i == 2 ? GPIO_PIN_SET : GPIO_PIN_RESET);
 		HAL_Delay(125);
 	}
-	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(LED_GNSS_LOCK, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(LED_ACTIVE, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(LED_ERROR, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(Debug1_GPIO_Port, Debug1_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(Debug2_GPIO_Port, Debug2_Pin, GPIO_PIN_RESET);
 
+	// Blink as acknowledgement for SD formatting
 	if (do_format_sd)
 	{
-		HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+		HAL_GPIO_TogglePin(LED_GNSS_LOCK);
 		HAL_Delay(100);
-		HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+		HAL_GPIO_TogglePin(LED_GNSS_LOCK);
 	}
 
-	// Give some time to connect virtual COM port
+	// Provide some time to connect virtual COM port
 	HAL_Delay(2500);
 
+	// Init logger
 	hlog.huart = &huart3;
 	hlog.hvsd = &hvsd1;
 	hlog.flush_timeout = 100;
@@ -222,7 +225,6 @@ int main(void)
 	hvsd1.fatfs = &SDFatFS;
 	hvsd1.fatfs_file = &SDFile;
 	hvsd1.fatfs_path = SDPath;
-
 	if (SD_Init(&hvsd1, do_format_sd) != HAL_OK)
 	{
 		Error_Handler();
@@ -242,8 +244,15 @@ int main(void)
 		{
 			Error_Handler();
 		}
-		config_buffer[config_buffer_size] = '\0';
-		Config_Load(config_buffer, strlen(config_buffer));
+		if (config_buffer_size < sizeof(config_buffer))
+		{
+			config_buffer[config_buffer_size] = '\0';
+			Config_Load(config_buffer, strlen(config_buffer));
+		}
+		else
+		{
+			printf("(%lu) Config file too large, using default\r\n", HAL_GetTick());
+		}
 	}
 	else
 	{
@@ -263,25 +272,25 @@ int main(void)
 	Debug_test_print_config();
 #endif
 
-	// Initialize based on configuration
+	// Initialize based on config
 	if (Config_Init(&hadc1, &htim2, &htim3) != HAL_OK)
 	{
 		Error_Handler();
 	}
 	printf("(%lu) Configuration loaded\r\n", HAL_GetTick());
 
-	// Init acceleration double buffering
+	// Init acceleration data double buffering
 	hbuffer_a.buffer_len = config.a_buffer_len;
-	hbuffer_a.buffer1 = a_buffer_1;
-	hbuffer_a.buffer2 = a_buffer_2;
+	hbuffer_a.buffer_1 = a_buffer_1;
+	hbuffer_a.buffer_2 = a_buffer_2;
 	hbuffer_a.element_size = sizeof(a_data_point_t);
 	Double_Buffer_Init(&hbuffer_a);
 	a_current_data_point = Double_Buffer_Current(&hbuffer_a);
 
-	// Init position double buffering
+	// Init position data double buffering
 	hbuffer_p.buffer_len = config.p_buffer_len;
-	hbuffer_p.buffer1 = p_buffer_1;
-	hbuffer_p.buffer2 = p_buffer_2;
+	hbuffer_p.buffer_1 = p_buffer_1;
+	hbuffer_p.buffer_2 = p_buffer_2;
 	hbuffer_p.element_size = sizeof(p_data_point_t);
 	Double_Buffer_Init(&hbuffer_p);
 	p_current_data_point = Double_Buffer_Current(&hbuffer_p);
@@ -298,7 +307,7 @@ int main(void)
 		Error_Handler();
 	}
 
-	// Initialize u-blox 8
+	// Initialize Navilock 62528
 	hnmea.huart = &NMEA_HUART;
 	hnmea.baud = 115200;
 	hnmea.tx_timeout = 1000;
@@ -309,18 +318,21 @@ int main(void)
 		Error_Handler();
 	}
 
+	// Wait for GNSS date if configured
 	if (!config.boot_without_date)
 	{
 		NMEA_Data_t gnss_data = NMEA_GetDate(&hnmea);
 		if (gnss_data.date_valid)
 		{
+			// Received valid date
 			hvsd1.date_year = gnss_data.year + 2000;
 			hvsd1.date_month = gnss_data.month;
 			hvsd1.date_day = gnss_data.day;
-			printf("(%lu) GNSS date: %04hu-%02u-%02u ", HAL_GetTick(), hvsd1.date_year, hvsd1.date_month, hvsd1.date_day);
+			printf("(%lu) GNSS date: %04hu-%02u-%02u", HAL_GetTick(), hvsd1.date_year, hvsd1.date_month, hvsd1.date_day);
 			if (gnss_data.time_valid)
 			{
-				printf("%02u:%02u:%06.3f\r\n", gnss_data.hour, gnss_data.minute, gnss_data.second);
+				// Received valid time
+				printf(" UTC time: %02u:%02u:%06.3f\r\n", gnss_data.hour, gnss_data.minute, gnss_data.second);
 			}
 			else
 			{
@@ -342,14 +354,17 @@ int main(void)
 		FRESULT res;
 		if ((res = f_mkdir(hvsd1.dir_path)) != FR_OK)
 		{
-			printf("(%lu) ERROR: main: Create error dir (\"%s\") failed\r\n", HAL_GetTick(), hvsd1.dir_path);
+			printf("(%lu) ERROR: main: Create error dir (\"%s\") failed, is the SD card read-only?\r\n", HAL_GetTick(), hvsd1.dir_path);
+			// Creating date-based directory failed and creating fallback directory failed, appearently no write access to the SD card
 			Error_Handler();
 			while (1)
 				;
 		}
+		// Update file paths to use new directory
 		if (SD_UpdateFilepaths(&hvsd1) != HAL_OK)
 		{
-			printf("(%lu) ERROR: main: SD_UpdateFilepaths failed\r\n", HAL_GetTick());
+			printf("(%lu) ERROR: main: SD_UpdateFilepaths failed, is the SD card read-only?\r\n", HAL_GetTick());
+			// Creating files in directory failed, appearently files can not be written to the SD card
 			Error_Handler();
 			while (1)
 				;
@@ -362,7 +377,9 @@ int main(void)
 	{
 		for (uint8_t i_ch = 0; i_ch < config.piezo_count; i_ch++)
 		{
+			// Copy FIR taps (selected in config file) to taps array of filter instance
 			memcpy(hfir_pz[i_ch].Taps, fir_taps_types[config.fir_type], fir_taps_lens[config.fir_type] * sizeof(q15_t));
+			// Set filter taps count
 			hfir_pz[i_ch].Nt = fir_taps_lens[config.fir_type];
 			FIR_Init(&hfir_pz[i_ch]);
 		}
@@ -379,10 +396,10 @@ int main(void)
 	HAL_DAC_Start(&hdac, DAC_CHANNEL_2);
 #endif
 
-	// If button is held down, wait for release. Otherwise capture is stopped immediately
+	// If button is still held down (for SD card formatting), wait for release. Otherwise capture is stopped immediately
 	while (HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin) == GPIO_PIN_SET)
 		;
-	// Button debounce
+	// Debounce delay
 	HAL_Delay(250);
 
 	// Start piezo ADC
@@ -397,7 +414,7 @@ int main(void)
 		printf("(%lu) ERROR: main: HAL_TIM_Base_Start_IT failed\r\n", HAL_GetTick());
 		Error_Handler();
 	}
-	// Start regular piezo timer
+	// Start regular sampling timer
 	if (HAL_TIM_Base_Start_IT(&htim3) == HAL_ERROR)
 	{
 		printf("(%lu) ERROR: main: HAL_TIM_Base_Start_IT failed\r\n", HAL_GetTick());
@@ -429,14 +446,15 @@ int main(void)
 	// Offset so page change doesn't happen simultaneously with buffer save -> more even file size
 	last_page_change = HAL_GetTick() - 181;
 
-	// Wait for NMEA_NO_PACKET_DURATION from this point
+	// Start NMEA_NO_PACKET_DURATION from this point in time
 	time_p_last = HAL_GetTick();
 	time_p_last_lock = HAL_GetTick();
 
 #if DEBUG_TEST_PRINT_NEW_PAGE
 	printf("(%lu) Page %li (\"%s\", \"%s\")\r\n", HAL_GetTick(), hvsd1.page_num, hvsd1.a_file_path, hvsd1.p_file_path);
 #endif
-	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+	// Activate LED
+	HAL_GPIO_WritePin(LED_ACTIVE, GPIO_PIN_SET);
 	capture_running = 1;
 	/* USER CODE END 2 */
 
@@ -449,23 +467,28 @@ int main(void)
 		/* USER CODE BEGIN 3 */
 		DEBUG_MAIN_LOOP
 
-		// Blink dir_num with LD1 (green)
+		// Blink dir_num with "GNSS Lock" LED
 		if (HAL_GetTick() - hvsd1.a_header.boot_duration < 2000)
 		{
-			HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(LED_GNSS_LOCK, GPIO_PIN_SET);
 		}
 		else if (HAL_GetTick() - hvsd1.a_header.boot_duration < 2200)
 		{
-			HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(LED_GNSS_LOCK, GPIO_PIN_RESET);
 		}
 		else if (HAL_GetTick() - hvsd1.a_header.boot_duration < 2200 + hvsd1.dir_num * 400)
 		{
-			HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, (HAL_GetTick() - hvsd1.a_header.boot_duration - 2200) % 400 < 200);
+			HAL_GPIO_WritePin(LED_GNSS_LOCK, (HAL_GetTick() - hvsd1.a_header.boot_duration - 2200) % 400 < 200 ? GPIO_PIN_SET : GPIO_PIN_RESET);
 		}
 
+		// Process double buffering (save buffers to file)
 		Main_Double_Buffer_Loop();
+		// Process NMEA packets (parse line from circular buffer to p_data_point_t)
 		Main_NMEA_Loop();
+		// Write to log (UART, USB CDC, log file)
+		Log_Loop(&hlog);
 
+		// Create new file after page_duration
 		if (HAL_GetTick() - last_page_change > config.page_duration_ms)
 		{
 			SD_NewPage(&hvsd1);
@@ -475,18 +498,18 @@ int main(void)
 			last_page_change = HAL_GetTick();
 		}
 
-		Log_Loop(&hlog);
-
 		DEBUG_MAIN_LOOP
 
+		// Poll stop button
 		if (HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin) == GPIO_PIN_SET)
 		{
 			capture_running = 0;
-			break;
 		}
 	}
 
+	// Stop sampling timers and ADC
 	HAL_TIM_Base_Stop_IT(&htim2);
+	HAL_TIM_Base_Stop_IT(&htim3);
 	HAL_ADC_Stop_IT(&hadc1);
 
 	// Save remaining data
@@ -494,14 +517,17 @@ int main(void)
 	Double_Buffer_Flush(&hbuffer_p);
 	Main_Double_Buffer_Loop();
 
-	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+	// Deactivate LEDs
+	HAL_GPIO_WritePin(LED_GNSS_LOCK, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(LED_ACTIVE, GPIO_PIN_RESET);
 
 	printf("(%lu) Capture stopped (\"%s\")\r\n", HAL_GetTick(), hvsd1.dir_path);
 
+	// Uninit
 	Log_Uninit(&hlog);
 	SD_Uninit(&hvsd1);
 
+	// Stop running
 	while (1)
 		;
 	/* USER CODE END 3 */
@@ -1113,17 +1139,14 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-/**
- * @brief  Retargets the C library printf function to the USART.
- *   None
- * @retval None
- */
+// Called by printf, redirected to logger
 PUTCHAR_PROTOTYPE
 {
 	Log_Char(&hlog, ch);
 	return ch;
 }
 
+// Save an acceleration data array
 void Main_Save_a_Buffer(volatile a_data_point_t *buffer)
 {
 	if (SD_WriteBuffer(&hvsd1, hvsd1.a_file_path, (void*)buffer, hbuffer_a.save_len * sizeof(a_data_point_t)) != HAL_OK)
@@ -1136,6 +1159,7 @@ void Main_Save_a_Buffer(volatile a_data_point_t *buffer)
 	}
 }
 
+// Save a position data array
 void Main_Save_p_Buffer(volatile p_data_point_t *buffer)
 {
 	if (SD_WriteBuffer(&hvsd1, hvsd1.p_file_path, (void*)buffer, hbuffer_p.save_len * sizeof(p_data_point_t)) != HAL_OK)
@@ -1144,6 +1168,7 @@ void Main_Save_p_Buffer(volatile p_data_point_t *buffer)
 	}
 }
 
+// Handles saving data by double buffering
 void Main_Double_Buffer_Loop()
 {
 	// If a_buffer_1 is ready to save
@@ -1195,9 +1220,9 @@ void Main_Double_Buffer_Loop()
 	}
 }
 
+// Parse circular buffered NMEA packets
 void Main_NMEA_Loop()
 {
-	// Parse buffered NMEA data
 	NMEA_Data_t data;
 	while (NMEA_ProcessLine(&hnmea, &data))
 	{
@@ -1213,7 +1238,7 @@ void Main_NMEA_Loop()
 			// Activate GNSS lock LED
 			if (HAL_GetTick() - hvsd1.a_header.boot_duration > 4000 + hvsd1.dir_num * 400)
 			{
-				HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_SET);
+				HAL_GPIO_WritePin(LED_GNSS_LOCK, GPIO_PIN_SET);
 			}
 		}
 		if (data.speed_valid)
@@ -1238,6 +1263,7 @@ void Main_NMEA_Loop()
 		}
 		if (any_valid)
 		{
+			// Set time for last valid packet
 			time_p_last = HAL_GetTick();
 			// If timer for incrementing the data point index is not running yet
 			if (time_p_inc == 0)
@@ -1245,7 +1271,7 @@ void Main_NMEA_Loop()
 				// Start the timer
 				time_p_inc = HAL_GetTick() + NMEA_PACKET_MERGE_DURATION;
 			}
-			// If the timer was running, the data was merged into the same p_data_point_t and the timer keeps running
+			// If the timer was already running, the data was merged into the same p_data_point_t (by not yet incrementing the index) and the timer keeps running
 		}
 	}
 	// Next position data point if timer ended
@@ -1267,15 +1293,16 @@ void Main_NMEA_Loop()
 		// Deactivate GNSS lock LED
 		if (HAL_GetTick() - hvsd1.a_header.boot_duration > 4000 + hvsd1.dir_num * 400)
 		{
-			HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(LED_GNSS_LOCK, GPIO_PIN_RESET);
 		}
 		time_p_last_lock = 0;
 	}
 }
 
+// Next acceleration data point
 void Main_Increment_a_Buffer()
 {
-	// Set complete bits of last data point
+	// Merge complete bits of last data point
 	a_current_data_point->complete |= (1 << A_COMPLETE_TIMESTAMP)
 		| (flag_complete_a_mems << A_COMPLETE_MEMS)
 		| (flag_complete_a_pz << A_COMPLETE_PZ);
@@ -1286,18 +1313,22 @@ void Main_Increment_a_Buffer()
 		a_current_data_point = Double_Buffer_Current(&hbuffer_a);
 	}
 
+	// Set timestamp of next data point
 	a_current_data_point->timestamp = ticks_counter;
 }
 
+// Next position data point
 void Main_Increment_p_Buffer()
 {
-	// Set complete bits of last data point
+	// Merge complete bits of last data point
 	p_current_data_point->complete |= (1 << P_COMPLETE_TIMESTAMP)
 		| (flag_complete_p_time << P_COMPLETE_GNSS_TIME)
 		| (flag_complete_p_position << P_COMPLETE_POSITION)
 		| (flag_complete_p_speed << P_COMPLETE_SPEED)
 		| (flag_complete_p_altitude << P_COMPLETE_ALTITUDE);
 
+	// Position data prints every sample due to relatively low sampling rate
+	// Acceleration data is printed as stats of entire buffer
 	if (config.print_position_data)
 	{
 		Debug_test_print_p(p_current_data_point);
@@ -1306,11 +1337,13 @@ void Main_Increment_p_Buffer()
 	Double_Buffer_Increment(&hbuffer_p);
 	p_current_data_point = Double_Buffer_Current(&hbuffer_p);
 
+	// Set timestamp of next data point
 	p_current_data_point->timestamp = ticks_counter;
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+	// Regular sampling timer
 	if (htim->Instance == TIM3)
 	{
 		DEBUG_A_TIMER
@@ -1319,9 +1352,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		{
 			// Increment data point index
 			Main_Increment_a_Buffer();
+			// Increment system timestamp
 			ticks_counter++;
 
-			// Request MEMS data packet
+			// Request MEMS acceleration data
 			if (ADXL_RequestData(&hadxl) == HAL_ERROR)
 			{
 				printf("(%lu) WARNING: ADXL_RequestData: TxRx failed\r\n", HAL_GetTick());
@@ -1336,20 +1370,24 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
 	if (capture_running)
 	{
-		// ADC for piezos
+		// Piezo ADC
 		if (hadc->Instance == ADC1)
 		{
 			DEBUG_ADC_PZ_CONV
 
+			// Put n samples into filter input for each channel (where n is the oversampling ratio)
 			for (uint8_t i_sample = 0; i_sample < config.oversampling_ratio; i_sample++)
 			{
 				for (uint8_t i_ch = 0; i_ch < config.piezo_count; i_ch++)
 				{
+					// Left shift for precision increase due to downsampling, subtraction for conversion from unsigned to signed
 					hfir_pz[i_ch].In[i_sample] = (pz_dma_buffer[i_sample * config.piezo_count + i_ch] << 1) - 4094;
 				}
 			}
+			// Calculate FIR filter for each channel
 			for (uint8_t i_ch = 0; i_ch < config.piezo_count; i_ch++)
 			{
+				// If FIR is enabled
 				if (config.fir_type > 0)
 				{
 					FIR_Update(&hfir_pz[i_ch]);
@@ -1377,6 +1415,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 	{
 		DEBUG_ADXL_PROCESS
 
+		// Parse received acceleration data
 		ADXL_Data_t adxl_data = ADXL_RxCallback(&hadxl);
 		a_current_data_point->xyz_mems1[0] = adxl_data.x;
 		a_current_data_point->xyz_mems1[1] = adxl_data.y;
@@ -1394,6 +1433,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	{
 		DEBUG_NMEA_PROCESS
 
+		// NMEA DMA buffer full, redirected to NMEA handler functions
 		if (NMEA_ProcessDMABuffer(&hnmea) == HAL_ERROR)
 		{
 			Error_Handler();
@@ -1411,9 +1451,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 void Error_Handler(void)
 {
 	/* USER CODE BEGIN Error_Handler_Debug */
-	/* User can add his own implementation to report the HAL error return state */
-	HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_SET);
+	/* User can add their own implementation to report the HAL error return state */
+	HAL_GPIO_WritePin(LED_ERROR, GPIO_PIN_SET);
 	printf("(%lu) Fatal Error, but attempting to continue\r\n", HAL_GetTick());
+	// Uncomment to stop system on error (do not attempt to continue)
 	/*
 	 SD_FlushLog();
 	 SD_Uninit();
@@ -1435,7 +1476,7 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
+  /* User can add their own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }

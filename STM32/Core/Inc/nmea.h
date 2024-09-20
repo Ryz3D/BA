@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * nmea.h
  *
  * UART (RS-232) NMEA driver for u-blox 8 (Navilock 62528)
@@ -21,24 +21,28 @@
 #include "config.h"
 #include "stm32f7xx_hal.h"
 
+// NMEA talker ID
 #define NMEA_TALKER_GPS 'P'
 #define NMEA_TALKER_GLONASS 'L'
 #define NMEA_TALKER_GALILEO 'A'
 #define NMEA_TALKER_BEIDOU 'B'
 #define NMEA_TALKER_ANY 'N'
 
+// NMEA mode in RMC packet
 #define NMEA_MODE_AUTONOMOUS 'A'
 #define NMEA_MODE_DIFFERENTIAL 'D'
 #define NMEA_MODE_ESTIMATED 'E'
 #define NMEA_MODE_MANUAL 'M'
 #define NMEA_MODE_NOT_VALID 'N'
 
+// Port ID of u-blox 8
 #define NMEA_PORT_ID_DDC 0
 #define NMEA_PORT_ID_UART1 1
 #define NMEA_PORT_ID_UART2 2
 #define NMEA_PORT_ID_USB 3
 #define NMEA_PORT_ID_SPI 4
 
+// UBX Protocol: ID of each GNSS
 #define UBX_GNSS_ID_GPS 0
 #define UBX_GNSS_ID_SBAS 1
 #define UBX_GNSS_ID_GALILEO 2
@@ -47,10 +51,12 @@
 #define UBX_GNSS_ID_QZSS 5
 #define UBX_GNSS_ID_GLONASS 6
 
+// UBX Protocol: Reset types
 #define UBX_RESET_BBR_HOT_START 0x0000
 #define UBX_RESET_BBR_WARM_START 0x0001
 #define UBX_RESET_BBR_COLD_START 0xFFFF
 
+// UBX Protocol: Reset modes
 #define UBX_RESET_MODE_HW 0x00
 #define UBX_RESET_MODE_SW 0x01
 #define UBX_RESET_MODE_SW_GNSS 0x02
@@ -58,6 +64,7 @@
 #define UBX_RESET_MODE_GNSS_STOP 0x08
 #define UBX_RESET_MODE_GNSS_START 0x09
 
+// NMEA buffer sizes
 #define NMEA_RX_BUFFER_SIZE 128
 #define NMEA_DMA_BUFFER_SIZE 1
 #define NMEA_CIRCULAR_BUFFER_SIZE 32
@@ -178,7 +185,7 @@ typedef struct
 	char mode; // See #define NMEA_MODE_XXX
 } NMEA_Packet_VTG_t;
 
-// header = Class, ID, Length
+// header = Class (0x06), ID (0x08), Length (6)
 #define NMEA_UBX_CFG_RATE_HEADER (0x06 | (0x08 << 8) | (6 << 16))
 typedef struct
 {
@@ -233,8 +240,8 @@ typedef struct
 
 typedef struct
 {
-	uint16_t navBbrMask;
-	uint8_t resetMode;
+	uint16_t navBbrMask; // See #define UBX_RESET_BBR_XXX
+	uint8_t resetMode; // See #define UBX_RESET_MODE_XX
 	uint8_t reserved;
 } NMEA_UBX_CFG_RST_t;
 

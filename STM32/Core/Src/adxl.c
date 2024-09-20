@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * adxl.c
  *
  * SPI driver for MEMS sensor ADXL357 at 4 kSa/s
@@ -17,6 +17,7 @@ HAL_StatusTypeDef ADXL_ReadRegisters(ADXL_t *hadxl, uint8_t count, uint8_t regis
 	ADXL_CHIP_SELECT(hadxl);
 
 	hadxl->state = ADXL_STATE_BUSY_TX;
+	// Transmit register address to be read (LSB is set to read)
 	uint8_t addr_tx = (register_addr << 1) | 1;
 	if (HAL_SPI_Transmit(hadxl->hspi, &addr_tx, sizeof(uint8_t), hadxl->timeout) != HAL_OK)
 	{
@@ -25,6 +26,7 @@ HAL_StatusTypeDef ADXL_ReadRegisters(ADXL_t *hadxl, uint8_t count, uint8_t regis
 	}
 
 	hadxl->state = ADXL_STATE_BUSY_RX;
+	// Receive register data
 	if (HAL_SPI_Receive(hadxl->hspi, buffer, count * sizeof(uint8_t), hadxl->timeout) != HAL_OK)
 	{
 		hadxl->state = ADXL_STATE_ERROR;
@@ -42,6 +44,7 @@ HAL_StatusTypeDef ADXL_WriteRegisters(ADXL_t *hadxl, uint8_t count, uint8_t regi
 	ADXL_CHIP_SELECT(hadxl);
 
 	hadxl->state = ADXL_STATE_BUSY_TX;
+	// Transmit register address to be written (LSB is cleared to write)
 	uint8_t addr_tx = (register_addr << 1) | 0;
 	if (HAL_SPI_Transmit(hadxl->hspi, &addr_tx, sizeof(uint8_t), hadxl->timeout) != HAL_OK)
 	{
@@ -50,6 +53,7 @@ HAL_StatusTypeDef ADXL_WriteRegisters(ADXL_t *hadxl, uint8_t count, uint8_t regi
 	}
 
 	hadxl->state = ADXL_STATE_BUSY_RX;
+	// Transmit register data
 	if (HAL_SPI_Transmit(hadxl->hspi, buffer, count, hadxl->timeout) != HAL_OK)
 	{
 		hadxl->state = ADXL_STATE_ERROR;
@@ -179,7 +183,7 @@ HAL_StatusTypeDef ADXL_RequestData(ADXL_t *hadxl)
 {
 	ADXL_CHIP_SELECT(hadxl);
 
-	// Send request_buffer
+	// Send acceleration data request
 	hadxl->state = ADXL_STATE_BUSY_RX;
 	if (HAL_SPI_TransmitReceive_DMA(hadxl->hspi, hadxl->request_buffer, (uint8_t*)hadxl->data_buffer, sizeof(hadxl->request_buffer)) == HAL_ERROR)
 	{
@@ -196,6 +200,7 @@ ADXL_Data_t ADXL_RxCallback(ADXL_t *hadxl)
 	ADXL_CHIP_DESELECT(hadxl);
 
 	ADXL_Data_t data;
+	// Construct integers from separate bytes
 	data.temp = ((uint16_t)(hadxl->data_buffer[1] & 0b00001111) << 8) | (hadxl->data_buffer[2]);
 	data.x = ((uint32_t)hadxl->data_buffer[3] << 12) | ((uint32_t)hadxl->data_buffer[4] << 4) | (hadxl->data_buffer[5] >> 4);
 	data.y = ((uint32_t)hadxl->data_buffer[6] << 12) | ((uint32_t)hadxl->data_buffer[7] << 4) | (hadxl->data_buffer[8] >> 4);
@@ -215,6 +220,7 @@ ADXL_Data_t ADXL_RxCallback(ADXL_t *hadxl)
 		data.z -= 0x100000;
 	}
 
+	// Bits are high if SPI interface is not connected
 	if (data.x == 0xFFFFFFFF && data.y == 0xFFFFFFFF && data.z == 0xFFFFFFFF)
 	{
 		data.data_valid = 0;

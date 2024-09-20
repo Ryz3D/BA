@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * data_points.h
  */
 
@@ -13,6 +13,7 @@
 
 #include "config.h"
 
+// Positions of complete bits (bit 0 = timestamp complete, bit 1 = MEMS complete, etc.)
 #define A_COMPLETE_TIMESTAMP 0
 #define A_COMPLETE_MEMS 1
 #define A_COMPLETE_PZ 2

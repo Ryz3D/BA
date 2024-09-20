@@ -1,10 +1,10 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * fir.c
  *
  * Wrapper for CMSIS-DSP FIR filter (16-bit int)
@@ -34,12 +34,14 @@ HAL_StatusTypeDef FIR_Init(FIR_t *hfir)
 	{
 		hfir->In[i] = hfir->Out[i] = 0;
 	}
+	// Init CMSIS-DSP FIR
 	arm_fir_init_q15(&hfir->Instance, hfir->Nt, (q15_t*)hfir->Taps, hfir->State, config.oversampling_ratio);
 	return HAL_OK;
 }
 
 HAL_StatusTypeDef FIR_Update(FIR_t *hfir)
 {
+	// Calculate CMSIS-DSP FIR
 	arm_fir_q15(&hfir->Instance, hfir->In, hfir->Out, config.oversampling_ratio);
 	return HAL_OK;
 }

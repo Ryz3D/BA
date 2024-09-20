@@ -1,15 +1,16 @@
 /*
  * Copyright (c) 2024 Mirco Heitmann
  * All rights reserved.
- * 
+ *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
- * 
+ *
  * debug_tests.c
  */
 
 #include "debug_tests.h"
 
+// Used to skip default boot procedure and quickly test active measurement
 void Debug_test_fast_boot(ADC_HandleTypeDef *hadc1, TIM_HandleTypeDef *htim2, TIM_HandleTypeDef *htim3, uint16_t *pz_dma_buffer)
 {
 	Config_Default();
@@ -19,6 +20,7 @@ void Debug_test_fast_boot(ADC_HandleTypeDef *hadc1, TIM_HandleTypeDef *htim2, TI
 	HAL_TIM_Base_Start_IT(htim3);
 }
 
+// Prints compiled and loaded config
 void Debug_test_print_config()
 {
 	printf("(%lu) Compiled Config:\r\n", HAL_GetTick());
@@ -43,6 +45,7 @@ void Debug_test_print_config()
 	}
 }
 
+// Simulates frequency sweep as input to FIR and outputs points as (frequency, output-amplitude)
 void Debug_test_FIR_frequency_sweep(FIR_t *hfir)
 {
 	float freqs[400];
@@ -84,6 +87,7 @@ void Debug_test_FIR_frequency_sweep(FIR_t *hfir)
 	printf("]\r\n\r\n");
 }
 
+// Print stats for given acceleration buffer
 void Debug_test_print_a(volatile a_data_point_t *buffer)
 {
 	uint8_t ch = 1;
@@ -103,6 +107,7 @@ void Debug_test_print_a(volatile a_data_point_t *buffer)
 	printf("(%lu) Peak-peak: Piezo: %.3f V\tMEMS: %.3f\tOffset: Piezo: %.3f V\tMEMS: %.3f\r\n", HAL_GetTick(), pz_ampl, mems_ampl, pz_offs, mems_offs);
 }
 
+// Print data of given position data point
 void Debug_test_print_p(volatile p_data_point_t *dp)
 {
 	uint8_t any_valid = 0;
