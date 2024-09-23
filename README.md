@@ -1,10 +1,10 @@
-# Bachelorarbeit
+# Bachelorarbeit _"Entwicklung eines multisensorischen Messsystems für die Zustandsüberwachung von Eisenbahnrädern"_
 
 ## Repository
-In diesem Repository sind alle zugehörigen Daten der Bachelorarbeit von Mirco Heitmann zu finden.
+In diesem Repository sind alle zugehörigen Daten der Bachelorarbeit zu finden.
 Die Ordnerstruktur ist wie folgt aufgebaut:
 | Ordner    | Inhalt |
-| --------- | ------------- |
+| --------- | ------ |
 | Hardware  | Schaltpläne, Platinenlayout und Schaltungssimulationen |
 | Messungen | Messdaten zu durchgeführten Tests |
 | Python    | Python-Skripts zur Datenauswertung und Simulation |
