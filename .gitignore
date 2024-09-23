@@ -6,4 +6,4 @@ STM32/[Dd]ebug
 STM32/*.launch
 
 # Python
-# **/__pycache__
+**/__pycache__
