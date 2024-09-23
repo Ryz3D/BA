@@ -1,0 +1,37 @@
+
+
+(2891) Booting...
+(2891) SD card initialized
+(3092) Config found, reading...
+(3094) Compiled Config:
+    VERSION=1
+    LOAD_CONFIG=1
+    OVERSAMPLING_RATIO_MAX=20
+    PIEZO_COUNT_MAX=5
+    A_BUFFER_LEN_MAX=4096
+    P_BUFFER_LEN_MAX=128
+    NMEA_DATE_WAIT_DURATION=180000
+    NMEA_PACKET_MERGE_DURATION=25
+    NMEA_NO_PACKET_DURATION=5000
+(3095) Loaded Config:
+    boot_without_date=0
+    print_acceleration_data=0
+    print_position_data=0
+    piezo_count=3
+    fir_type=1
+    adxl_range=40
+    page_duration_ms=1800000
+    a_sampling_rate=4000
+    p_sampling_rate=4
+    oversampling_ratio=4
+    a_buffer_len=4096
+    p_buffer_len=32
+(3098) Configuration loaded
+(3099) ADXL357 initialized
+(5487) WARNING: UBX-CFG-RATE not acknowledged
+(5487) Waiting for GNSS date (timeout after 180 s)...
+(185488) WARNING: No GNSS date received, saving as 0000_00_00
+(185595) Writing dir "0000-00-00_1"
+(185847) Capture started
+(191056) WARNING: No NMEA data
+(191056) WARNING: No position lock
