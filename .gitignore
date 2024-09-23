@@ -4,3 +4,6 @@ STM32/.settings
 STM32/[Rr]elease
 STM32/[Dd]ebug
 STM32/*.launch
+
+# Python
+# **/__pycache__

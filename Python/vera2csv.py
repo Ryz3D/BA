@@ -3,8 +3,8 @@ import numpy as np
 from scipy import signal
 
 enable_matplotlib_preview = False # Requires matplotlib
-enable_plotly_preview = True # Requires plotly
-enable_map_view = True # Requires plotly
+enable_plotly_preview = True # Requires pandas and plotly
+enable_map_view = True # Requires pandas and plotly
 
 if enable_matplotlib_preview:
     import matplotlib.pyplot as plt
@@ -15,12 +15,11 @@ if enable_plotly_preview or enable_map_view:
 
 delay_pz_analog = 300e-6 # 300 µs
 delay_mems = 12.25e-3 # 12.25 ms
-offset_pz = 0.0
+img_dir = 'vera2csv_img' # For -sp
+img_scale = 2.0 # For -sp
 version_support = 1
-img_dir = 'vera2csv_img'
-img_scale = 2.0
 
-# Reads acceleration file, returns (a_header, a_data_points)
+# Reads acceleration file, returns (a_header, [a_data_point])
 def a_parse(a_path, n_skip):
     with open(a_path, 'rb') as f:
         a_data = f.read() # Read binary acceleration data
@@ -65,7 +64,7 @@ def a_parse(a_path, n_skip):
             a_data_points.append(a_dp_t.from_buffer_copy(dp_slice)) # Parse and add A_DataPoint from binary data
     return a_header, a_data_points
 
-# Reads position file, returns (p_header, p_data_points)
+# Reads position file, returns (p_header, [p_data_point])
 def p_parse(p_path, n_skip):
     with open(p_path, 'rb') as f:
         p_data = f.read()
@@ -111,12 +110,15 @@ def p_parse(p_path, n_skip):
             p_data_points.append(p_dp_t.from_buffer_copy(dp_slice))
     return p_header, p_data_points
 
-# Returns datetime object in local timezone based on GNSS date from position data point
-def p_dp_datetime(dp):
+# Returns datetime object in local timezone based on UTC time as [hour, minute, second, microseconds]
+def utc_datetime(utc_time):
     utc_date = [p_header.year, p_header.month, p_header.day]
-    utc_time = [dp.gnss_hour, dp.gnss_minute, int(dp.gnss_second), int((dp.gnss_second % 1) * 1000)]
     utc_datetime = datetime.datetime(*utc_date, *utc_time, tzinfo=datetime.timezone.utc)
     return utc_datetime.astimezone()
+
+# Returns datetime object in local timezone based on GNSS date from position data point
+def p_dp_datetime(dp):
+    return utc_datetime([dp.gnss_hour, dp.gnss_minute, int(dp.gnss_second), int((dp.gnss_second % 1) * 1000)])
 
 # Checks if array exceeds maximum, returns True if a <= mx
 def check_max(a, mx):
@@ -147,7 +149,7 @@ if '-h' in sys.argv or '--help' in sys.argv:
     print('\t-fir / --firfilter          | Filters data with 4 Hz lowpass')
     print('\t-tf  / --timeformat (0-2)   | Set timestamp format in .csv (0: ISO format, 1: POSIX timestamp, 2: hour,minute,second)')
     print('\t-p   / --preview            | Shows interactive preview of acceleration data')
-    print('\t-pf  / --previewfft (axis)  | Shows interactive preview including FFT of specified axis (0-2: MEMS [X-Z], 3-7: Piezo [0-4])')
+    print('\t-pf  / --previewfft (axis)  | Shows interactive preview including FFT of specified axis (0-2: MEMS [X-Z], 3-7: Piezo [1-5])')
     print('\t-m   / --map                | Shows interactive map preview of position data')
     print('\t-sp  / --saveplot           | Saves selected plots (see above options) as .png and .pdf')
     print('\t-s   / --save (path)        | Saves data as .csv file')
@@ -243,7 +245,11 @@ pp = None
 if os.path.isfile(os.path.join(dir_path, 'preprocess.py')):
     sys.path.append(dir_path)
     import preprocess # type: ignore
-    pp = preprocess.preprocess
+    if hasattr(preprocess, 'preprocess'):
+        pp = preprocess.preprocess
+        print('Found preprocess.py')
+    else:
+        print('WARNING: preprocess.py exists, but it defines no function "preprocess"')
 
 # Check found paths
 if len(a_file_paths) == 0 and len(p_file_paths) == 0:
@@ -256,7 +262,7 @@ if len(p_file_paths) == 0:
 
 # Parse data points
 file_count = len(a_file_paths) + len(p_file_paths)
-print(f'Reading and parsing {file_count} file(s)...')
+print(f'Reading and parsing {file_count} file{"" if file_count == 1 else "s"}...')
 print('0.0 %')
 a_data_points = []
 p_data_points = []
@@ -269,6 +275,7 @@ p_file_paths = sorted(p_file_paths, key=get_file_num)
 max_len = max(len(a_file_paths), len(p_file_paths))
 stop_at_next = False
 
+# Read files, check for -t0, -t1
 for i in range(max_len):
     if stop_at_next:
         break
@@ -277,24 +284,24 @@ for i in range(max_len):
         if a_header is None or a_dp is None or len(a_dp) == 0:
             continue
         if arg_t1 is not None:
-            if a_dp[-1].timestamp / (a_header.a_sampling_rate / (arg_skip + 1)) > arg_t1:
+            if a_dp[-1].timestamp / a_header.a_sampling_rate > arg_t1:
                 stop_at_next = True
         elif arg_d is not None:
-            if a_dp[-1].timestamp / (a_header.a_sampling_rate / (arg_skip + 1)) > arg_t0 + arg_d:
+            if a_dp[-1].timestamp / a_header.a_sampling_rate > arg_t0 + arg_d:
                 stop_at_next = True
-        if a_dp[-1].timestamp / (a_header.a_sampling_rate / (arg_skip + 1)) >= arg_t0:
+        if a_dp[-1].timestamp / a_header.a_sampling_rate >= arg_t0:
             a_data_points.extend(a_dp)
     if i < len(p_file_paths):
         p_header, p_dp = p_parse(p_file_paths[i], arg_skip)
         if p_header is None or p_dp is None or len(p_dp) == 0:
             continue
         if arg_t1 is not None:
-            if p_dp[-1].timestamp / (a_header.a_sampling_rate / (arg_skip + 1)) > arg_t1:
+            if p_dp[-1].timestamp / a_header.a_sampling_rate > arg_t1:
                 stop_at_next = True
         elif arg_d is not None:
-            if p_dp[-1].timestamp / (a_header.a_sampling_rate / (arg_skip + 1)) > arg_t0 + arg_d:
+            if p_dp[-1].timestamp / a_header.a_sampling_rate > arg_t0 + arg_d:
                 stop_at_next = True
-        if p_dp[-1].timestamp / (a_header.a_sampling_rate / (arg_skip + 1)) >= arg_t0:
+        if p_dp[-1].timestamp / a_header.a_sampling_rate >= arg_t0:
             p_data_points.extend(p_dp)
     print(round(100 * (i + 1) / max_len, 2), '%')
 print("a_data_header:")
@@ -304,7 +311,7 @@ print("p_data_header:")
 for key, f_type in type(p_header)._fields_:
     print(f" {key}: {getattr(p_header, key)}")
 
-print(f'Loaded "{arg_path}"')
+print(f'Loaded "{arg_path}" with {len(a_data_points)} acceleration data points and {len(p_data_points)} position data points')
 
 # Check date
 if p_header.year < 1800:
@@ -333,8 +340,9 @@ for i in range(len(gnss_times) - 1):
             unchanged = p_data_points[true_i + 1:i + 1]
             p_data_points[true_i + 1] = p_data_points[i + 1]
             p_data_points[true_i + 2:i + 2] = unchanged
+            p_data_points[true_i + 1].timestamp = round((p_data_points[true_i].timestamp + p_data_points[true_i + 2].timestamp) / 2)
 
-# Get time data
+# Get timestamps
 def get_x_data(data_points):
     x = []
     for dp in data_points:
@@ -349,8 +357,6 @@ def get_x_data(data_points):
 
 full_data_x = get_x_data(a_data_points)
 full_data_x_p = get_x_data(p_data_points)
-full_data_x -= full_data_x[0]
-full_data_x_p -= full_data_x[0]
 
 # Get timespan
 t_start = arg_t0
@@ -365,7 +371,7 @@ if len(full_data_x_p) > 0:
     i_start_p = np.argmin(np.abs(full_data_x_p - t_start))
     i_end_p = np.argmin(np.abs(full_data_x_p - t_end))
 
-# Calculate group delay
+# Calculate delay
 delay_pz_digital = (a_header.fir_taps_len - 1) / 2.0 / a_header.a_sampling_rate
 delay_piezo = delay_pz_analog + delay_pz_digital
 delay_piezo_i = int(delay_piezo * a_header.a_sampling_rate / (arg_skip + 1))
@@ -397,6 +403,8 @@ for a in range(3):
     full_data_y.append(np.array([dp.xyz_mems1[a] for dp in a_data_points[delay_mems_i:]]) / 524287.0)
 for i in range(a_header.piezo_count):
     full_data_y.append(2 * np.array([dp.a_piezo[i] for dp in a_data_points[delay_piezo_i:]]) / 8190.0)
+    # Remove DC offset of piezos (~1%)
+    full_data_y[-1] -= np.average(full_data_y[-1])
 # Extend missing due to delay
 if len(full_data_y) > 3:
     for a in range(3):
@@ -404,18 +412,19 @@ if len(full_data_y) > 3:
             full_data_y[a] = np.append(full_data_y[a], [0] * (len(full_data_y[3]) - len(full_data_y[a])))
     for i in range(a_header.piezo_count):
         if len(full_data_y[3 + i]) < len(full_data_y[0]):
-            full_data_y[3 + i] = np.append(full_data_y[3 + i] + offset_pz, [0] * (len(full_data_y[0]) - len(full_data_y[3 + i])))
+            full_data_y[3 + i] = np.append(full_data_y[3 + i], [0] * (len(full_data_y[0]) - len(full_data_y[3 + i])))
 full_data_x = full_data_x[:len(full_data_y[0])]
 full_data_y = np.array(full_data_y).clip(-1, 1)
 # Preprocess
 if pp is not None:
     try:
-        print('Running preprocess.py')
+        print('Running preprocess.py...')
         full_data_y = pp(full_data_y)
+        print('...done')
     except Exception as e:
         print(f'! WARNING: Preprocess script failed: {e}')
 
-# Check data
+# Check acceleration data
 piezos_missing = False
 mems_missing = False
 if len(a_data_points) == 0:
@@ -442,8 +451,9 @@ else:
             print(f'! WARNING: MEMS {["X", "Y", "Z"][a]} data out of range')
     for i in range(a_header.piezo_count):
         if not check_min_max([dp.a_piezo[i] for dp in a_data_points], -8190, 8190):
-            print(f'! WARNING: Piezo [{i}] data out of range')
+            print(f'! WARNING: Piezo [{i + 1}] data out of range')
 
+# Check position data
 gnss_times_missing = False
 pos_missing = False
 speed_missing = False
@@ -512,9 +522,43 @@ if arg_save is not None:
                     csv_header.extend(['altitude'])
             f.write(','.join(csv_header) + csv_line_sep)
 
+            do_lerp = not arg_ni and len(full_data_x_p) > 0
+            if do_lerp:
+                p_lambda_valid = [lambda dp: dp.complete & (1 << 1), lambda dp: dp.complete & (1 << 2), lambda dp: dp.complete & (1 << 3), lambda dp: dp.complete & (1 << 4)]
+                p_lambda_value = [lambda dp: [dp.gnss_hour * 3600 + dp.gnss_minute * 60 + dp.gnss_second], lambda dp: [dp.lat, dp.lon], lambda dp: [dp.speed], lambda dp: [dp.altitude]]
+                last_valid_i = [-1] * len(p_lambda_valid)
+                next_valid_i = [0] * len(p_lambda_valid)
+                def find_next_valid_i(c):
+                    for p_i in range(last_valid_i[c] + 1, len(p_data_points)):
+                        if p_lambda_valid[c](p_data_points[p_i]):
+                            return p_i
+                    return -1
+                def p_lerp(c, t_a):
+                    v1 = p_lambda_value[c](p_data_points[last_valid_i[c]])
+                    v2 = p_lambda_value[c](p_data_points[next_valid_i[c]])
+                    res = [0] * len(v1)
+                    if p_data_points[last_valid_i[c]].timestamp == p_data_points[next_valid_i[c]].timestamp:
+                        return v1
+                    else:
+                        t_r = (t_a - p_data_points[last_valid_i[c]].timestamp) / (p_data_points[next_valid_i[c]].timestamp - p_data_points[last_valid_i[c]].timestamp)
+                        t_r = min(1, max(0, t_r))
+                    for vi in range(len(res)):
+                        res[vi] = v1[vi] + (v2[vi] - v1[vi]) * t_r
+                    return res
+                for c in range(len(p_lambda_valid)):
+                    last_valid_i[c] = find_next_valid_i(c)
+                    next_valid_i[c] = find_next_valid_i(c)
+
             for a_dp_i in range(len(full_data_x)):
                 t = full_data_x[a_dp_i]
-                if len(full_data_x_p) > 0:
+                if do_lerp:
+                    for c in range(len(p_lambda_valid)):
+                        if next_valid_i[c] != -1 and a_data_points[a_dp_i].timestamp >= p_data_points[next_valid_i[c]].timestamp:
+                            last_valid_i[c] = next_valid_i[c]
+                            next_valid_i[c] = find_next_valid_i(c)
+                            if next_valid_i[c] == -1:
+                                last_valid_i[c] = -1
+                elif len(full_data_x_p) > 0:
                     p_dp_i = np.argmin(np.abs(full_data_x_p - t))
                     p_dp = p_data_points[p_dp_i]
 
@@ -528,54 +572,48 @@ if arg_save is not None:
                         continue
                     csv.append(round(full_data_y[i][a_dp_i], 6))
                 if len(full_data_x_p) > 0:
-                    if arg_ni or p_dp_i >= len(p_data_points) - 1:
+                    def format_dt(dt):
+                        if arg_tf == 0:
+                            return [dt.time().isoformat()]
+                        elif arg_tf == 1:
+                            return [dt.timestamp()]
+                        elif arg_tf == 2:
+                            return [dt.hour, dt.minute, round(dt.second + (dt.microsecond * 1e-6), 3)]
+                    
+                    if do_lerp:
+                        a_t = a_data_points[a_dp_i].timestamp
                         if not gnss_times_missing:
-                            dp_time = p_dp_datetime(p_dp)
-                            if arg_tf == 0:
-                                csv.extend([dp_time.time().isoformat()])
-                            elif arg_tf == 1:
-                                csv.extend([dp_time.timestamp()])
-                            elif arg_tf == 2:
-                                csv.extend([dp_time.hour, dp_time.minute, round(dp_time.second + (dp_time.microsecond * 1e-6), 3)])
+                            s_total = p_lerp(0, a_t)[0]
+                            h = int(s_total // 3600)
+                            m = int((s_total - h * 3600) // 60)
+                            s = int(s_total % 60)
+                            ms = round(1e+6 * (s_total % 1))
+                            csv.extend(format_dt(utc_datetime([h, m, s, ms])))
+                        if not pos_missing:
+                            p_lat, p_lon = p_lerp(1, a_t)
+                            csv.extend([round(p_lat, 8), round(p_lon, 8)])
+                        if not speed_missing:
+                            csv.extend([round(p_lerp(2, a_t)[0], 3)])
+                        if not altitude_missing:
+                            p_lerp(3, a_t)
+                            csv.extend([round(p_lerp(3, a_t)[0], 3)])
+                    else:
+                        if not gnss_times_missing:
+                            csv.extend(format_dt(p_dp_datetime(p_dp)))
                         if not pos_missing:
                             csv.extend([round(p_dp.lat, 8), round(p_dp.lon, 8)])
                         if not speed_missing:
                             csv.extend([round(p_dp.speed, 3)])
                         if not altitude_missing:
                             csv.extend([round(p_dp.altitude, 3)])
-                    else:
-                        # TODO: interpolate p_dp and p_data_points[p_dp_i + 1]
-                        # TODO: better: save last valid (>0) time/position/speed/altitude, lookahead for next valid, interpolate individually, because not every position dp has valid data
-                        # save index of previous and next valid
-                        # if a.timestamp > p[next].timestamp: previous=next, find next
-                        pass
                 f.write(','.join([str(v) for v in csv]) + csv_line_sep)
         print(f'File "{arg_save}" written')
 
-
-# TODO
-if False:
-    import matplotlib.pyplot as plt
-    x1 = full_data_y[0] * 15
-    x2 = full_data_y[3]
-    f, Pxx = signal.csd(x1, x1, nperseg=1024, fs=a_header.a_sampling_rate)
-    f, Pyy = signal.csd(x2, x2, nperseg=1024, fs=a_header.a_sampling_rate)
-    f, Pxy = signal.csd(x1, x2, nperseg=1024, fs=a_header.a_sampling_rate)
-    f, Pyx = signal.csd(x2, x1, nperseg=1024, fs=a_header.a_sampling_rate)
-    dB = lambda y: 20 * np.log10(np.abs(y))
-    plt.semilogx(f, dB(Pxx), label = '$P_{xx}$')
-    plt.semilogx(f, dB(Pyy), label = '$P_{yy}$')
-    # plt.semilogx(f, dB(Pyx/Pxx), label = '$H_{1}(f)$')
-    # plt.semilogx(f, dB(Pyy/Pxy), label = '$H_{2}(f)$')
-    plt.semilogx(f, (dB(Pyx/Pxx) + dB(Pyy/Pxy)) / 2, label = '$H_{1-2}(f)$')
-    plt.legend()
-    plt.show()
-
+# 4 Hz FIR
 if arg_fir:
-    fs = a_header.a_sampling_rate / (arg_skip + 1)
-    f = 10
-    numtaps = 1024
-    h = signal.firwin(numtaps, f, fs = fs)
+    f = 4
+    numtaps = 2048
+    h = signal.firwin(numtaps, f, fs = a_header.a_sampling_rate / (arg_skip + 1))
     fir_delay_i = int((numtaps - 1) / 2)
     plot_x = full_data_x[:-fir_delay_i]
     plot_y = []
@@ -585,6 +623,7 @@ else:
     plot_x = full_data_x
     plot_y = full_data_y
 
+# Preview
 show_plot = arg_preview or arg_fftaxis is not None
 show_fft = arg_fftaxis is not None
 show_coords = arg_map_view and not enable_map_view
@@ -594,7 +633,7 @@ if show_plot or show_fft or show_coords:
     if enable_plotly_preview:
         fig = sp.make_subplots(rows = 2 if show_fft else 1, cols = 1, shared_xaxes = True)
 
-        # Plotly graphs
+        # plotly graphs
         mems_axes = {}
         if not mems_missing:
             mems_axes = {
@@ -603,15 +642,13 @@ if show_plot or show_fft or show_coords:
         piezo_axes = {}
         if not piezos_missing:
             piezo_axes = {
-                **{f"Piezo [{i - 3}]": plot_y[i] for i in range(len(full_data_y))[3:]},
+                **{f"Piezo [{i - 2}]": plot_y[i] for i in range(len(full_data_y))[3:]},
             }
-        axes = {**mems_axes, **piezo_axes}
-        # axes = {list(axes.keys())[arg_fftaxis]: list(axes.values())[arg_fftaxis]}
-        df = pd.DataFrame({'t': plot_x, **axes})
+        df = pd.DataFrame({'t': plot_x, **mems_axes, **piezo_axes})
         fig.add_traces(px.line(df, x = 't', y = df.columns, hover_data = {'t': False}).data, rows = 1, cols = 1)
 
         if show_fft:
-            # Plotly spectrogram
+            # plotly spectrogram
             if arg_fftaxis < 0 or arg_fftaxis >= len(full_data_y):
                 print('! WARNING: Invalid FFT axis specified (value after -pf should be between 0 and 5), using first axis (0)')
                 arg_fftaxis = 0
@@ -631,17 +668,21 @@ if show_plot or show_fft or show_coords:
                                      y = np.linspace(f0, f1, Sx2.shape[0])).data,
                                      rows = 2, cols = 1)
 
+        s_suffix = True
+        x_label = '<i>t</i>' if s_suffix else '<i>t</i> / s'
+        a_rel = True
+        y_label = '<i>a</i>' if a_rel else '<i><sup>a</sup>⁄<sub>a<sub>max</sub></sub></i> / %'
         fig.update_traces(hovertemplate = '%{y:.6f}')
         fig.update_layout(
             font_size = 14,
-            xaxis = {'ticksuffix': ' s'},
-            xaxis2 = {'title': '<i>t</i>', 'ticksuffix': ' s'},
-            yaxis = {'title': '<i>a</i>'},
+            xaxis = {'title': '' if show_fft else x_label, 'ticksuffix': ' s' if s_suffix else ''},
+            xaxis2 = {'title': x_label, 'ticksuffix': ' s' if s_suffix else ''},
+            yaxis = {'title': y_label},
             yaxis2 = {'title': '<i>f</i> / Hz', 'range': [0, 300]},
             hovermode = 'x unified',
             colorscale = {'sequentialminus': 'aggrnyl'},
             coloraxis_colorbar = {
-                'title': '<i>S<sub>XX</sub>(f)</i> / dB',
+                'title': '<i>S</i><sub>XX</sub><i>(f)</i> / dB',
                 'len': 0.5, 'lenmode': 'fraction',
                 'y': 0, 'yanchor': 'bottom',
             }
@@ -692,7 +733,7 @@ if show_plot or show_fft or show_coords:
                     continue
                 if i >= 3 and piezos_missing:
                     continue
-                label = f"MEMS {['X', 'Y', 'Z'][i]}" if i < 3 else f"Piezo [{i - 3}]"
+                label = f"MEMS {['X', 'Y', 'Z'][i]}" if i < 3 else f"Piezo [{i - 2}]"
                 ax_p.plot(full_data_x,
                         full_data_y[i],
                         label = label,
@@ -709,6 +750,7 @@ if show_plot or show_fft or show_coords:
             ax_f.set(xlabel='$t$ / s', ylabel='$f$ / Hz')
 
         if show_coords and ax_c is not None:
+            # matplotlib coordinates
             full_data_lat = np.array([dp.lat for dp in p_data_points])
             full_data_lon = np.array([dp.lon for dp in p_data_points])
             ax_c[0].plot(full_data_x_p[np.abs(full_data_lat) > 1],
@@ -728,7 +770,7 @@ if arg_map_view and len(p_data_points) > 0:
     elif pos_missing:
         print('! WARNING: Can\'t show map view, since position data is missing')
     else:
-        # Show plotly map
+        # plotly map
         df = {}
         df['name'] = []
         df['Messung'] = []

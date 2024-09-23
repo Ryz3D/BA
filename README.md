@@ -6,6 +6,7 @@ Die Ordnerstruktur ist wie folgt aufgebaut:
 | Ordner    | Inhalt |
 | --------- | ------------- |
 | Hardware  | Schaltpläne, Platinenlayout und Schaltungssimulationen |
+| Messungen | Messdaten zu durchgeführten Tests |
 | Python    | Python-Skripts zur Datenauswertung und Simulation |
 | STM32     | STM32CubeIDE-Projektdateien |
 
